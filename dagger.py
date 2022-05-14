@@ -54,20 +54,26 @@ password = "examplepass"
 
 context = ssl.create_default_context()
 
+#First job, conniecting to postgres and data fetch/push to other jobs
   def t1:
     psycopg.connect()
-    cursor.execute("Select * FROM documents WHERE customer='regular' AND aproval ='yes' ")
+    cursor.execute("Select email FROM documents WHERE customer='regular' AND aproval ='yes' ")
     context['ti'].xcom_push(key='key1', value=cursor.fetchall()]
-    
+    cursor.execute("Select accountno FROM  WHERE customer='regular' AND aproval ='no' ")
+    context['ti'].xcom_push(key='key2',value=cursor.fetchall()]
+  #Second job, deploys mail to the approved mass  
   def t2:
     pending= context.get('ti').xcom_pull(key='key1')
     with smtplib.SMTP_SSL("smtp.gmail.com", port, context=context) as server:
       message="Your account has been approved"
       server.login("my@gmail.com", password)    
-      server.sendmail("my@gmail.com", "your@gmail.com", message)      
+      server.sendmail("my@gmail.com", "your@gmail.com", message)   
+    
+  def t3: 
+     list[]=context.get('ti').xcom_pull(key='key2')                       
   
   with DAG(
-    dag_id='FLOW'
+    dag_id='FLOWER'
     default_args=default_args,
     description='A simple workflow DAG',
     schedule_interval='@daily',
@@ -75,12 +81,12 @@ context = ssl.create_default_context()
     tags=['example'],
 ) as dag:
   
-    t1 = BashOperator(
+    first_function_execute = BashOperator(
         task_id='print_date',
         python_callable=t1
     )
 
-    t2 = BashOperator(
+    second_function_execute = BashOperator(
         task_id='sleep',
         depends_on_past=False,
         bash_command='sleep 5',
@@ -88,7 +94,7 @@ context = ssl.create_default_context()
         python_callable=t2
     )
     
-    t3 = BashOperator(
+    third_function_execute = BashOperator(
         task_id='templated',
         depends_on_past=False,
         bash_command=templated_command,
