@@ -1,7 +1,6 @@
-from datetime import timedelta
+from ast import operator
+from datetime import datetime, timedelta
 from textwrap import dedent
-import psycopg2
-from psycopg2 import Error
 import smtplib, ssl
 # Import modules
 
@@ -10,7 +9,7 @@ from airflow import DAG
 
 # Operators to operate
 from airflow.operators.bash import BashOperator
-from airflow.utils.dates import now
+from airflow.operators.python_operator import PythonOperator
 
 # Args to pass on to operators
 default_args = {
@@ -26,60 +25,80 @@ default_args = {
   'trigger_rule': 'all_success'
   }
   
-  try:
-    # Connect to an existing database
-    connection = psycopg2.connect(user='postgres', password="pynative@#29",host="127.0.0.1",port="5432",database="postgres_db")
-
-    # Create a cursor to perform database operations
-    cursor = connection.cursor()
-    # Print PostgreSQL details
-    print("PostgreSQL server information")
-    print(connection.get_dsn_parameters(), "\n")
-    # Executing a SQL query
-    cursor.execute("SELECT version();")
-    # Fetch result
-    record = cursor.fetchone()
-    print("You are connected to - ", record, "\n")
-
-  except (Exception, Error) as error:
-    print("Error while connecting to PostgreSQL", error)
-finally:
-    if (connection):
-        cursor.close()
-        connection.close()
-        print("PostgreSQL connection is closed")  
+#!/usr/bin/python
+import psycopg2
+import config
+  
+def connect():
+    """ Connect to the PostgreSQL database server """
+    conn = None
+    try:
+        # read connection parameters
+        params = config()
+  
+        # connect to the PostgreSQL server
+        print('Connecting to the PostgreSQL database...')
+        conn = psycopg2.connect(**params)
+          
+        # create a cursor
+        cur = conn.cursor()
+          
+    # execute a statement
+        print('PostgreSQL database version:')
+        cur.execute('SELECT version()')
+  
+        # display the PostgreSQL database server version
+        db_version = cur.fetchone()
+        print(db_version)
+         
+    # close the communication with the PostgreSQL
+        cur.close()
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    finally:
+        if conn is not None:
+            conn.close()
+            print('Database connection closed.')
+  
+  
+if __name__ == '__main__':
+    connect() 
         
-  port = 465  # For SSL
+port = 465  # For SSL
 password = "examplepass"
 
 context = ssl.create_default_context()
 
 #First job, conniecting to postgres and data fetch/push to other jobs
-  def t1:
-    psycopg.connect()
-    cursor.execute("Select email FROM documents WHERE customer='regular' AND aproval ='yes' ")
-    context['ti'].xcom_push(key='key1', value=cursor.fetchall()]
-    cursor.execute("Select accountno FROM  WHERE customer='regular' AND aproval ='no' ")
-    context['ti'].xcom_push(key='key2',value=cursor.fetchall()]
+def t1():
+  psycopg.connect()
+  cursor.execute("Select email FROM documents WHERE customer='regular' AND aproval ='yes' ")
+  context['ti'].xcom_push(key='key1', value=cursor.fetchall())
+  cursor.execute("Select accountno FROM  WHERE customer='regular' AND aproval ='no' ")
+  context['ti'].xcom_push(key='key2',value=cursor.fetchall())
   #Second job, deploys mail to the approved mass  
-  def t2:
-    pending= context.get('ti').xcom_pull(key='key1')
-    with smtplib.SMTP_SSL("smtp.gmail.com", port, context=context) as server:
-      message="Your account has been approved"
-      server.login("my@gmail.com", password)    
-      server.sendmail("my@gmail.com", "your@gmail.com", message)   
+def t2():
+  pending= context.get('ti').xcom_pull(key='key1')
+  with smtplib.SMTP_SSL("smtp.gmail.com", port, context=context) as server:
+    message="Your account has been approved"
+  server.login("my@gmail.com", password)    
+  server.sendmail("my@gmail.com", "your@gmail.com", message)   
     
-  def t3: 
-     list[]=context.get('ti').xcom_pull(key='key2')                       
-  
-  with DAG(
-    dag_id='FLOWER'
+def t3(): 
+  list=context.get('ti').xcom_pull(key='key2')                       
+  with smtplib.SMTP_SSL("smtp.gmail.com", port, context=context) as server:
+    message=list
+  server.login("my@gmail.com", password)    
+  server.sendmail("my@gmail.com", "employee@gmail.com", message)
+
+  with DAG (
+    dag_id='FLOWER',
     default_args=default_args,
     description='A simple workflow DAG',
     schedule_interval='@daily',
-    start_date=now,
+    start_date=datetime(2022,3,12),
     tags=['example'],
-) as dag:
+    ) as dag :
   
     first_function_execute = BashOperator(
         task_id='print_date',
@@ -87,18 +106,15 @@ context = ssl.create_default_context()
     )
 
     second_function_execute = BashOperator(
-        task_id='sleep',
-        depends_on_past=False,
-        bash_command='sleep 5',
+        task_id='tries',
         retries=3,
         python_callable=t2
     )
     
     third_function_execute = BashOperator(
         task_id='templated',
-        depends_on_past=False,
-        bash_command=templated_command,
         params={'my_param': 'Parameter I passed in'},
+        python_callable=t2
     )
 
     t1 >> [t2, t3]
