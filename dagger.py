@@ -1,15 +1,18 @@
-from ast import operator
-from datetime import datetime, timedelta
-from textwrap import dedent
-import smtplib, ssl
+try:
+  from ast import operator
+  from datetime import datetime, timedelta
+  from textwrap import dedent
+  import smtplib, ssl
 # Import modules
 
-from airflow import DAG  
+  from airflow import DAG  
 # Dag object to instantiate a DAG
 
 # Operators to operate
-from airflow.operators.bash import BashOperator
-from airflow.operators.python_operator import PythonOperator
+  from airflow.operators.bash import BashOperator
+  from airflow.operators.python_operator import PythonOperator
+except Exception as e:
+  print('error {}')
 
 # Args to pass on to operators
 default_args = {
